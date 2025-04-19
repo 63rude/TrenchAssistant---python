@@ -1,0 +1,17 @@
+# Ignore virtual environment
+.venv/
+
+# Bytecode and cache
+__pycache__/
+*.pyc
+
+# SQLite database and logs (optional)
+*.db
+*.log
+
+# VS Code settings (optional but common)
+.vscode/
+
+# OS-specific junk
+.DS_Store
+Thumbs.db
