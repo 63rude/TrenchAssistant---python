@@ -16,7 +16,9 @@ def init_db(path: str):
             token_symbol TEXT,
             token_name TEXT,
             decimals INTEGER,
-            amount_human REAL
+            amount_human REAL,
+            price_usd REAL,
+            amount_usd REAL
         )
     """)
 
@@ -37,17 +39,20 @@ def insert_raw_transfer(tx: dict, db_path: str):
     cursor.execute("""
         INSERT INTO raw_transfers (
             timestamp, token, amount, action,
-            token_symbol, token_name, decimals, amount_human
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            token_symbol, token_name, decimals, amount_human,
+            price_usd, amount_usd
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         tx["timestamp"],
         tx.get("token", ""),
         tx.get("amount", 0),
         tx["action"],
-        None,  # token_symbol placeholder
-        None,  # token_name placeholder
-        None,  # decimals placeholder
-        None   # amount_human placeholder
+        tx.get("token_symbol"),   # Now coming properly
+        tx.get("token_name"),
+        tx.get("decimals"),
+        tx.get("amount_human"),
+        tx.get("price_usd"),
+        tx.get("amount_usd")
     ))
     conn.commit()
     conn.close()

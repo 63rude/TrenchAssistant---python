@@ -4,7 +4,7 @@ import time
 from .config import load_config
 from .transaction_fetcher import SolanaFMRawFetcher
 from .storage import init_db, insert_raw_transfer, load_last_page, save_last_page
-from .enricher import DatabaseEnricher  # <-- import it normally at the top
+from .enricher import DatabaseEnricher, PriceEnricher
 
 class MemeBot:
     def __init__(self):
@@ -48,6 +48,8 @@ class MemeBot:
                 tx["token_name"] = None
                 tx["decimals"] = None
                 tx["amount_human"] = None
+                tx["price_usd"] = None
+                tx["amount_usd"] = None
 
                 insert_raw_transfer(tx, self.config.db_path)
                 total_logged += 1
@@ -60,10 +62,15 @@ class MemeBot:
         print(f"\n✅ Done! {total_logged} total buys/sells logged to {self.config.db_path}")
 
         # 🛠 NOW, after fetching, enrich the database
-        print("\n🛠 Starting database enrichment...")
+        print("\n🛠 Starting database enrichment (symbols, decimals)...")
         enricher = DatabaseEnricher(self.config.db_path)
         enricher.run()
-        print("\n🎉 Database enrichment completed!")
+        print("\n🎉 Symbol and decimals enrichment completed!")
+
+        print("\n🛠 Starting historical price enrichment...")
+        price_enricher = PriceEnricher(self.config.db_path)
+        price_enricher.run()
+        print("\n🎉 Historical price enrichment completed!")
 
 if __name__ == "__main__":
     bot = MemeBot()

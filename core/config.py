@@ -10,6 +10,7 @@ CONFIG_FILE = Path("config.json")  # You can move this later
 class BotConfig:
     wallet_address: Optional[str] = "5gwETnzto2avSMA33RKawJxeJ3Yr2JYk1YreL2ghwZwh"
     solanafm_api_key: Optional[str] = "sk_live_f2f9cf5ce6024a409c04b0d41af50ec9"
+    birdeye_api_key: Optional[str] = "dca7cd0a02b64f6b840aa9e02b22df99"
     refresh_interval: int = 2  # in seconds
     run_minutes: int = 1 # run time
     db_path: str = "data/transactions.db"

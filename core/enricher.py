@@ -1,7 +1,10 @@
 import sqlite3
 import requests
 import math
+import time
 from typing import List
+from datetime import datetime
+from .market_data import BirdeyeMarketDataProvider  # 🛠 Import the Birdeye provider
 
 class DatabaseEnricher:
     def __init__(self, db_path: str):
@@ -43,9 +46,7 @@ class DatabaseEnricher:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         for token in metadata:
-            # Precalculate the divisor based on decimals
             divisor = 10 ** token["decimals"]
-
             cursor.execute("""
                 UPDATE raw_transfers
                 SET
@@ -64,15 +65,68 @@ class DatabaseEnricher:
         conn.commit()
         conn.close()
 
-
     def run(self):
         """Main function to enrich the database."""
         tokens = self.get_unique_tokens()
         print(f"Found {len(tokens)} unique tokens to enrich.")
         metadata = self.fetch_token_metadata(tokens)
         self.update_database(metadata)
-        print(f"✅ Enrichment completed.")
+        print(f"✅ Symbol and decimals enrichment completed.")
 
-if __name__ == "__main__":
-    enricher = DatabaseEnricher("data/transactions.db")  # Adjust path if needed
-    enricher.run()
+# 🆕 New Class: PriceEnricher
+
+class PriceEnricher:
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self.provider = BirdeyeMarketDataProvider()
+
+    def run(self):
+        """Main function to enrich the database with historical price."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        # Find transfers without price_usd
+        cursor.execute("""
+            SELECT rowid, token, timestamp, amount_human
+            FROM raw_transfers
+            WHERE price_usd IS NULL
+              AND token IS NOT NULL
+              AND amount_human IS NOT NULL
+        """)
+        rows = cursor.fetchall()
+
+        print(f"Found {len(rows)} transfers needing historical price enrichment.")
+
+        for row in rows:
+            rowid, token_address, timestamp, amount_human = row
+            dt_object = datetime.utcfromtimestamp(timestamp)
+
+            try:
+                prices = self.provider.get_price_history(token_address, dt_object, count=1)
+
+                if prices:
+                    # 🛠 Pick the first valid price returned
+                    best_price = prices[0]
+                    price_usd = best_price.price_usd
+                    amount_usd = amount_human * price_usd
+
+                    cursor.execute("""
+                        UPDATE raw_transfers
+                        SET
+                            price_usd = ?,
+                            amount_usd = ?
+                        WHERE rowid = ?
+                    """, (price_usd, amount_usd, rowid))
+
+                    conn.commit()
+                else:
+                    print(f"⚠️ No price data found for token {token_address} at {timestamp}")
+
+            except Exception as e:
+                print(f"⚠️ Failed to fetch price for {token_address} at {timestamp}: {e}")
+
+            time.sleep(1)  # Respect Birdeye 60 RPM limit
+
+        conn.close()
+        print("✅ Historical price enrichment completed.")
+
