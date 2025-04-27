@@ -1,7 +1,6 @@
 import sqlite3
 from pathlib import Path
 
-
 def init_db(path: str):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
@@ -10,11 +9,14 @@ def init_db(path: str):
     # Table for logging buys/sells
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS raw_transfers (
-            signature TEXT,
             timestamp INTEGER,
             token TEXT,
             amount REAL,
-            action TEXT
+            action TEXT,
+            token_symbol TEXT,
+            token_name TEXT,
+            decimals INTEGER,
+            amount_human REAL
         )
     """)
 
@@ -29,24 +31,26 @@ def init_db(path: str):
     conn.commit()
     conn.close()
 
-
 def insert_raw_transfer(tx: dict, db_path: str):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT OR IGNORE INTO raw_transfers (
-            signature, timestamp, token, amount, action
-        ) VALUES (?, ?, ?, ?, ?)
+        INSERT INTO raw_transfers (
+            timestamp, token, amount, action,
+            token_symbol, token_name, decimals, amount_human
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        tx["signature"],
         tx["timestamp"],
         tx.get("token", ""),
         tx.get("amount", 0),
-        tx["action"]
+        tx["action"],
+        None,  # token_symbol placeholder
+        None,  # token_name placeholder
+        None,  # decimals placeholder
+        None   # amount_human placeholder
     ))
     conn.commit()
     conn.close()
-
 
 def save_last_page(db_path: str, page: int):
     conn = sqlite3.connect(db_path)
@@ -58,7 +62,6 @@ def save_last_page(db_path: str, page: int):
     """, (str(page),))
     conn.commit()
     conn.close()
-
 
 def load_last_page(db_path: str) -> int:
     try:
