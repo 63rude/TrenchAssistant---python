@@ -4,7 +4,8 @@ import math
 import time
 from typing import List
 from datetime import datetime
-from .market_data import BirdeyeMarketDataProvider  # 🛠 Import the Birdeye provider
+from .market_data import BirdeyeMarketDataProvider
+from .config import load_config  # 🆕 Import config
 
 class DatabaseEnricher:
     def __init__(self, db_path: str):
@@ -25,7 +26,7 @@ class DatabaseEnricher:
         result = []
         for i in range(0, len(mints), 20):
             batch = mints[i:i+20]
-            params = { "mints": ",".join(batch) }
+            params = {"mints": ",".join(batch)}
             response = requests.get(self.api_url, params=params)
             response.raise_for_status()
             data = response.json()
@@ -73,15 +74,14 @@ class DatabaseEnricher:
         self.update_database(metadata)
         print(f"✅ Symbol and decimals enrichment completed.")
 
-# 🆕 New Class: PriceEnricher
-
 class PriceEnricher:
     def __init__(self, db_path: str):
         self.db_path = db_path
         self.provider = BirdeyeMarketDataProvider()
+        self.config = load_config()  # 🆕 Load the config once here
 
     def run(self):
-        """Main function to enrich the database with historical price."""
+        """Main function to enrich the database with historical price and market cap."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
@@ -105,18 +105,19 @@ class PriceEnricher:
                 prices = self.provider.get_price_history(token_address, dt_object, count=1)
 
                 if prices:
-                    # 🛠 Pick the first valid price returned
                     best_price = prices[0]
                     price_usd = best_price.price_usd
                     amount_usd = amount_human * price_usd
+                    market_cap_usd = price_usd * self.config.default_supply  # 🆕 Use config.default_supply
 
                     cursor.execute("""
                         UPDATE raw_transfers
                         SET
                             price_usd = ?,
-                            amount_usd = ?
+                            amount_usd = ?,
+                            market_cap_usd = ?
                         WHERE rowid = ?
-                    """, (price_usd, amount_usd, rowid))
+                    """, (price_usd, amount_usd, market_cap_usd, rowid))
 
                     conn.commit()
                 else:
@@ -128,5 +129,4 @@ class PriceEnricher:
             time.sleep(1)  # Respect Birdeye 60 RPM limit
 
         conn.close()
-        print("✅ Historical price enrichment completed.")
-
+        print("✅ Historical price and market cap enrichment completed.")

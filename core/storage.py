@@ -18,7 +18,8 @@ def init_db(path: str):
             decimals INTEGER,
             amount_human REAL,
             price_usd REAL,
-            amount_usd REAL
+            amount_usd REAL,
+            market_cap_usd REAL  -- 🆕 New column for market cap
         )
     """)
 
@@ -40,19 +41,20 @@ def insert_raw_transfer(tx: dict, db_path: str):
         INSERT INTO raw_transfers (
             timestamp, token, amount, action,
             token_symbol, token_name, decimals, amount_human,
-            price_usd, amount_usd
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            price_usd, amount_usd, market_cap_usd
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         tx["timestamp"],
         tx.get("token", ""),
         tx.get("amount", 0),
         tx["action"],
-        tx.get("token_symbol"),   # Now coming properly
+        tx.get("token_symbol"),
         tx.get("token_name"),
         tx.get("decimals"),
         tx.get("amount_human"),
         tx.get("price_usd"),
-        tx.get("amount_usd")
+        tx.get("amount_usd"),
+        tx.get("market_cap_usd")  # 🆕 Insert market cap
     ))
     conn.commit()
     conn.close()

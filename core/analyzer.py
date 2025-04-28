@@ -3,7 +3,6 @@ from collections import defaultdict, Counter
 from datetime import datetime
 from .models import Transaction, Trade
 
-
 class TradeAnalyzer:
     def __init__(self, transactions: List[Transaction]):
         self.transactions = sorted(transactions, key=lambda tx: tx.timestamp)
@@ -46,6 +45,25 @@ class TradeAnalyzer:
 
         avg_hold = sum(t.duration_secs for t in self.trades) / len(self.trades) if self.trades else 0
 
+        # 🆕 New Market Cap Stats
+        market_caps = [tx.market_cap_usd for tx in self.transactions if tx.market_cap_usd]
+        avg_market_cap = round(sum(market_caps) / len(market_caps), 2) if market_caps else None
+
+        # 🆕 Find top 5 tokens by highest market cap
+        token_caps = defaultdict(list)
+        for tx in self.transactions:
+            if tx.token_symbol and tx.market_cap_usd:
+                token_caps[tx.token_symbol].append(tx.market_cap_usd)
+
+        top_tokens_by_cap = sorted(
+            ((symbol, sum(caps) / len(caps)) for symbol, caps in token_caps.items()),
+            key=lambda item: item[1],
+            reverse=True
+        )[:5]
+
+        # 🆕 How many unknown tokens
+        unknown_tokens_count = sum(1 for tx in self.transactions if not tx.token_symbol)
+
         return {
             "total_profit_usd": round(total_profit, 4),
             "best_trades": best_trades,
@@ -55,12 +73,14 @@ class TradeAnalyzer:
             "unmatched_buys": sum(len(lst) for lst in self.unmatched_buys.values()),
             "win_rate": win_rate,
             "average_hold_time_secs": round(avg_hold, 2),
+            "average_market_cap_usd": avg_market_cap,
+            "top_5_tokens_by_market_cap": top_tokens_by_cap,
+            "unknown_tokens_count": unknown_tokens_count,
         }
-
 
 # Optional demo usage
 if __name__ == "__main__":
-    from core.mocks import generate_mock_transactions
+    from .generate_mock_data import generate_mock_transactions
 
     txns = generate_mock_transactions("DemoWallet", count=20)
     analyzer = TradeAnalyzer(txns)
@@ -69,12 +89,9 @@ if __name__ == "__main__":
     print("Total Profit:", results["total_profit_usd"])
     print("Win Rate:", f"{results['win_rate'] * 100:.2f}%")
     print("Avg Hold Time:", f"{results['average_hold_time_secs']:.0f} seconds")
+    print("Avg Market Cap:", results["average_market_cap_usd"])
     print("Most Active Day:", results["most_active_day"])
-
-    print("\nTop 3 Best Trades:")
-    for t in results["best_trades"]:
-        print(f" + {t.profit_usd} USD in {t.duration_secs:.0f}s")
-
-    print("\nTop 3 Worst Trades:")
-    for t in results["worst_trades"]:
-        print(f" - {abs(t.profit_usd)} USD in {t.duration_secs:.0f}s")
+    print("Top 5 Tokens by Market Cap:")
+    for symbol, cap in results["top_5_tokens_by_market_cap"]:
+        print(f" - {symbol}: ${cap:,.0f} market cap")
+    print("Unknown Tokens:", results["unknown_tokens_count"])

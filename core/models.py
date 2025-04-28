@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Optional, Literal
 from datetime import datetime
 
-
 @dataclass
 class Transaction:
     signature: str
@@ -11,9 +10,9 @@ class Transaction:
     token_symbol: Optional[str]
     amount: float
     amount_usd: Optional[float]
+    market_cap_usd: Optional[float]  # 🆕 New field added here
     type: Literal["BUY", "SELL", "TRANSFER", "UNKNOWN"]
     source: Optional[str]
-
 
 @dataclass
 class MarketData:
@@ -21,8 +20,7 @@ class MarketData:
     timestamp: datetime
     price_usd: float
     volume_usd: Optional[float]
-    market_cap: Optional[float]
-
+    market_cap_usd: Optional[float]  # 🆕 Standardized the name to match
 
 @dataclass
 class Trade:

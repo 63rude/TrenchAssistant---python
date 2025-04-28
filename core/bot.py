@@ -50,6 +50,7 @@ class MemeBot:
                 tx["amount_human"] = None
                 tx["price_usd"] = None
                 tx["amount_usd"] = None
+                tx["market_cap_usd"] = None
 
                 insert_raw_transfer(tx, self.config.db_path)
                 total_logged += 1
