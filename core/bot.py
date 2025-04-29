@@ -1,10 +1,12 @@
 from datetime import datetime, timedelta, timezone
 import time
+import logging
 
 from .config import load_config
 from .transaction_fetcher import SolanaFMRawFetcher
 from .storage import init_db, insert_raw_transfer, load_last_page, save_last_page
 from .enricher import DatabaseEnricher, PriceEnricher
+from .analyzer import TradeAnalyzer
 
 class MemeBot:
     def __init__(self):
@@ -13,7 +15,7 @@ class MemeBot:
         self.wallet = self.config.wallet_address
 
     def run(self):
-        print("🚀 Starting MemeBot (page-based pagination with resume)...")
+        logging.info("🚀 Starting MemeBot (page-based pagination with resume)...")
         init_db(self.config.db_path)
 
         start_time = datetime.now(timezone.utc)
@@ -23,16 +25,15 @@ class MemeBot:
 
         while datetime.now(timezone.utc) < end_time:
             try:
-                print(f"[🔄] Fetching page {page}...")
+                logging.info(f"[🔄] Fetching page {page}...")
                 transfers, _ = self.fetcher.fetch_transfers(self.wallet, page=page)
             except Exception as e:
-                print("❌ Error during fetch:")
-                print("    ➤", str(e))
-                print("💡 Try again later — may be API limits or end of history.")
+                logging.error(f"❌ Error during fetch: {e}")
+                logging.info("💡 Try again later — may be API limits or end of history.")
                 break
 
             if not transfers:
-                print("🚫 No transfers returned — stopping.")
+                logging.info("🚫 No transfers returned — stopping.")
                 break
 
             for tx in transfers:
@@ -43,7 +44,7 @@ class MemeBot:
                 else:
                     continue
 
-                # 🛠 Add placeholders
+                # Add placeholders
                 tx["token_symbol"] = None
                 tx["token_name"] = None
                 tx["decimals"] = None
@@ -57,22 +58,86 @@ class MemeBot:
 
             save_last_page(self.config.db_path, page + 1)
             page += 1
-            print(f"[+] Logged {len(transfers)} buys/sells (total so far: {total_logged})")
+            logging.info(f"[+] Logged {len(transfers)} buys/sells (total so far: {total_logged})")
             time.sleep(self.config.refresh_interval)
 
-        print(f"\n✅ Done! {total_logged} total buys/sells logged to {self.config.db_path}")
+        logging.info(f"\n✅ Done! {total_logged} total buys/sells logged to {self.config.db_path}")
 
-        # 🛠 NOW, after fetching, enrich the database
-        print("\n🛠 Starting database enrichment (symbols, decimals)...")
+        # After fetching, enrich database
+        logging.info("\n🛠 Starting database enrichment (symbols, decimals)...")
         enricher = DatabaseEnricher(self.config.db_path)
         enricher.run()
-        print("\n🎉 Symbol and decimals enrichment completed!")
+        logging.info("\n🎉 Symbol and decimals enrichment completed!")
 
-        print("\n🛠 Starting historical price enrichment...")
+        logging.info("\n🛠 Starting historical price enrichment...")
         price_enricher = PriceEnricher(self.config.db_path)
         price_enricher.run()
-        print("\n🎉 Historical price enrichment completed!")
+        logging.info("\n🎉 Historical price enrichment completed!")
+
+        # After enrichment, run analysis
+        logging.info("\n📈 Running analysis...")
+        from .storage import sqlite3
+        conn = sqlite3.connect(self.config.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT 
+                rowid,
+                timestamp,
+                token,
+                token_symbol,
+                amount,
+                amount_usd,
+                market_cap_usd,
+                action,
+                NULL -- placeholder for source
+            FROM raw_transfers
+            WHERE action IN ('BUY', 'SELL')
+            ORDER BY timestamp ASC
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+
+        from .models import Transaction
+
+        transactions = []
+        for row in rows:
+            transactions.append(Transaction(
+                signature=str(row[0]),
+                timestamp=datetime.utcfromtimestamp(row[1]),
+                token_address=row[2],
+                token_symbol=row[3],
+                amount=row[4],
+                amount_usd=row[5],
+                market_cap_usd=row[6],
+                type=row[7],
+                source=row[8]
+            ))
+
+        if not transactions:
+            logging.warning("⚠️ No transactions available for analysis.")
+            return
+
+        analyzer = TradeAnalyzer(transactions)
+        results = analyzer.analyze()
+
+        logging.info("\n🎯 Analysis Results:")
+        logging.info(f"Total Profit (USD): {results['total_profit_usd']}")
+        logging.info(f"Win Rate: {results['win_rate'] * 100:.2f}%")
+        logging.info(f"Average Hold Time: {results['average_hold_time_human']}")
+        logging.info(f"Median Hold Time: {results['median_hold_time_human']}")
+        logging.info(f"Profit vs Market Cap Correlation: {results['profit_vs_market_cap_correlation']}")
+
+        if results["best_token_by_profit"]:
+            logging.info(f"Best Token: {results['best_token_by_profit'][0]} (Profit ${results['best_token_by_profit'][1]:.2f})")
+
+        if results["worst_token_by_profit"]:
+            logging.info(f"Worst Token: {results['worst_token_by_profit'][0]} (Profit ${results['worst_token_by_profit'][1]:.2f})")
+
+        if results["start_date"] and results["end_date"]:
+            logging.info(f"Analyzed Transactions From {results['start_date']} to {results['end_date']}")
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
     bot = MemeBot()
     bot.run()

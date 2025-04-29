@@ -2,10 +2,11 @@ import sqlite3
 import requests
 import math
 import time
+import logging
 from typing import List
 from datetime import datetime
 from .market_data import BirdeyeMarketDataProvider
-from .config import load_config  # 🆕 Import config
+from .config import load_config
 
 class DatabaseEnricher:
     def __init__(self, db_path: str):
@@ -22,24 +23,38 @@ class DatabaseEnricher:
         return tokens
 
     def fetch_token_metadata(self, mints: List[str]) -> List[dict]:
-        """Fetch token metadata from Raydium in batches of 20."""
+        """Fetch token metadata from Raydium in batches of 20.
+           Missing tokens are marked as UNKNOWN_#.
+        """
         result = []
+        unknown_counter = 1
+
         for i in range(0, len(mints), 20):
             batch = mints[i:i+20]
             params = {"mints": ",".join(batch)}
             response = requests.get(self.api_url, params=params)
             response.raise_for_status()
             data = response.json()
+
             for idx, token_info in enumerate(data.get("data", [])):
                 if token_info is None:
-                    print(f"⚠️  No data for mint: {batch[idx]}")
+                    logging.warning(f"⚠️ No metadata found for mint: {batch[idx]}")
+                    result.append({
+                        "address": batch[idx],
+                        "symbol": f"UNKNOWN_{unknown_counter}",
+                        "name": f"UNKNOWN_{unknown_counter}",
+                        "decimals": 0
+                    })
+                    unknown_counter += 1
                     continue
+
                 result.append({
                     "address": token_info["address"],
                     "symbol": token_info["symbol"],
                     "name": token_info["name"],
                     "decimals": token_info["decimals"]
                 })
+
         return result
 
     def update_database(self, metadata: List[dict]):
@@ -47,7 +62,7 @@ class DatabaseEnricher:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         for token in metadata:
-            divisor = 10 ** token["decimals"]
+            divisor = 10 ** token["decimals"] if token["decimals"] else 1
             cursor.execute("""
                 UPDATE raw_transfers
                 SET
@@ -69,23 +84,22 @@ class DatabaseEnricher:
     def run(self):
         """Main function to enrich the database."""
         tokens = self.get_unique_tokens()
-        print(f"Found {len(tokens)} unique tokens to enrich.")
+        logging.info(f"🔍 Found {len(tokens)} unique tokens to enrich.")
         metadata = self.fetch_token_metadata(tokens)
         self.update_database(metadata)
-        print(f"✅ Symbol and decimals enrichment completed.")
+        logging.info("✅ Symbol and decimals enrichment completed.")
 
 class PriceEnricher:
     def __init__(self, db_path: str):
         self.db_path = db_path
         self.provider = BirdeyeMarketDataProvider()
-        self.config = load_config()  # 🆕 Load the config once here
+        self.config = load_config()
 
     def run(self):
         """Main function to enrich the database with historical price and market cap."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        # Find transfers without price_usd
         cursor.execute("""
             SELECT rowid, token, timestamp, amount_human
             FROM raw_transfers
@@ -95,7 +109,7 @@ class PriceEnricher:
         """)
         rows = cursor.fetchall()
 
-        print(f"Found {len(rows)} transfers needing historical price enrichment.")
+        logging.info(f"🔄 Found {len(rows)} transfers needing historical price enrichment.")
 
         for row in rows:
             rowid, token_address, timestamp, amount_human = row
@@ -108,7 +122,7 @@ class PriceEnricher:
                     best_price = prices[0]
                     price_usd = best_price.price_usd
                     amount_usd = amount_human * price_usd
-                    market_cap_usd = price_usd * self.config.default_supply  # 🆕 Use config.default_supply
+                    market_cap_usd = price_usd * self.config.default_supply
 
                     cursor.execute("""
                         UPDATE raw_transfers
@@ -121,12 +135,12 @@ class PriceEnricher:
 
                     conn.commit()
                 else:
-                    print(f"⚠️ No price data found for token {token_address} at {timestamp}")
+                    logging.warning(f"⚠️ No price data found for token {token_address} at {timestamp}")
 
             except Exception as e:
-                print(f"⚠️ Failed to fetch price for {token_address} at {timestamp}: {e}")
+                logging.warning(f"⚠️ Failed to fetch price for {token_address} at {timestamp}: {e}")
 
             time.sleep(1)  # Respect Birdeye 60 RPM limit
 
         conn.close()
-        print("✅ Historical price and market cap enrichment completed.")
+        logging.info("✅ Historical price and market cap enrichment completed.")
