@@ -104,8 +104,8 @@ class PriceEnricher:
             SELECT rowid, token, timestamp, amount_human
             FROM raw_transfers
             WHERE price_usd IS NULL
-              AND token IS NOT NULL
-              AND amount_human IS NOT NULL
+            AND token IS NOT NULL
+            AND amount_human IS NOT NULL
         """)
         rows = cursor.fetchall()
 
@@ -116,10 +116,12 @@ class PriceEnricher:
             dt_object = datetime.utcfromtimestamp(timestamp)
 
             try:
-                prices = self.provider.get_price_history(token_address, dt_object, count=1)
+                # ✅ NEW: fetch prices in ±5min window
+                prices = self.provider.get_price_history(token_address, dt_object)
 
                 if prices:
-                    best_price = prices[0]
+                    # ✅ NEW: choose the price closest to the transaction time
+                    best_price = min(prices, key=lambda p: abs((p.timestamp - dt_object).total_seconds()))
                     price_usd = best_price.price_usd
                     amount_usd = amount_human * price_usd
                     market_cap_usd = price_usd * self.config.default_supply
@@ -135,7 +137,7 @@ class PriceEnricher:
 
                     conn.commit()
                 else:
-                    logging.warning(f"⚠️ No price data found for token {token_address} at {timestamp}")
+                    logging.warning(f"⚠️ No price data found for token {token_address} near {timestamp}")
 
             except Exception as e:
                 logging.warning(f"⚠️ Failed to fetch price for {token_address} at {timestamp}: {e}")
@@ -144,3 +146,4 @@ class PriceEnricher:
 
         conn.close()
         logging.info("✅ Historical price and market cap enrichment completed.")
+

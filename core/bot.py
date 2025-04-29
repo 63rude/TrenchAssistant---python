@@ -1,12 +1,15 @@
 from datetime import datetime, timedelta, timezone
 import time
 import logging
+import sqlite3
 
 from .config import load_config
 from .transaction_fetcher import SolanaFMRawFetcher
 from .storage import init_db, insert_raw_transfer, load_last_page, save_last_page
 from .enricher import DatabaseEnricher, PriceEnricher
 from .analyzer import TradeAnalyzer
+from .models import Transaction
+from .utils import clean_transfer_database  # 🆕 this will be your cleanup logic
 
 class MemeBot:
     def __init__(self):
@@ -23,7 +26,7 @@ class MemeBot:
         total_logged = 0
         page = load_last_page(self.config.db_path)
 
-        while datetime.now(timezone.utc) < end_time:
+        while datetime.now(timezone.utc) < end_time and total_logged < 150:
             try:
                 logging.info(f"[🔄] Fetching page {page}...")
                 transfers, _ = self.fetcher.fetch_transfers(self.wallet, page=page)
@@ -44,7 +47,6 @@ class MemeBot:
                 else:
                     continue
 
-                # Add placeholders
                 tx["token_symbol"] = None
                 tx["token_name"] = None
                 tx["decimals"] = None
@@ -56,6 +58,9 @@ class MemeBot:
                 insert_raw_transfer(tx, self.config.db_path)
                 total_logged += 1
 
+                if total_logged >= 150:
+                    break
+
             save_last_page(self.config.db_path, page + 1)
             page += 1
             logging.info(f"[+] Logged {len(transfers)} buys/sells (total so far: {total_logged})")
@@ -63,23 +68,25 @@ class MemeBot:
 
         logging.info(f"\n✅ Done! {total_logged} total buys/sells logged to {self.config.db_path}")
 
-        # After fetching, enrich database
+        # Enrich metadata
         logging.info("\n🛠 Starting database enrichment (symbols, decimals)...")
         enricher = DatabaseEnricher(self.config.db_path)
         enricher.run()
         logging.info("\n🎉 Symbol and decimals enrichment completed!")
 
+        # 🧹 NEW: call custom cleaning logic
+        clean_transfer_database(self.config.db_path)
+
+        # Enrich prices
         logging.info("\n🛠 Starting historical price enrichment...")
         price_enricher = PriceEnricher(self.config.db_path)
         price_enricher.run()
         logging.info("\n🎉 Historical price enrichment completed!")
 
-        # After enrichment, run analysis
+        # Load and analyze
         logging.info("\n📈 Running analysis...")
-        from .storage import sqlite3
         conn = sqlite3.connect(self.config.db_path)
         cursor = conn.cursor()
-
         cursor.execute("""
             SELECT 
                 rowid,
@@ -98,13 +105,11 @@ class MemeBot:
         rows = cursor.fetchall()
         conn.close()
 
-        from .models import Transaction
-
         transactions = []
         for row in rows:
             transactions.append(Transaction(
                 signature=str(row[0]),
-                timestamp=datetime.utcfromtimestamp(row[1]),
+                timestamp=datetime.fromtimestamp(row[1], timezone.utc),
                 token_address=row[2],
                 token_symbol=row[3],
                 amount=row[4],

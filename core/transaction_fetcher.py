@@ -11,7 +11,7 @@ class SolanaFMRawFetcher:
             "Authorization": f"Bearer {self.api_key}"
         }
         self.limit = 1000  # Max allowed for /transactions endpoint
-        self.max_valid_transfers = 50  # Cap on total BUY/SELL transactions
+        self.max_valid_transfers = 150  # Cap on total BUY/SELL transactions
 
     def fetch_transfers(
         self,
@@ -74,7 +74,7 @@ class SolanaFMRawFetcher:
                             "action": action
                         })
 
-                    # ✅ Stop when we reach 50 valid buy/sell
+                    # ✅ Stop when we reach 150 valid buy/sell
                     if len(valid_transfers) >= self.max_valid_transfers:
                         return valid_transfers, tx_signatures
 
