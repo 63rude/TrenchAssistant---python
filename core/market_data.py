@@ -1,10 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 import requests
 
 from .models import MarketData
-from .config import load_config
 
 class MarketDataProvider(ABC):
     @abstractmethod
@@ -16,10 +15,10 @@ class MarketDataProvider(ABC):
         pass
 
 class BirdeyeMarketDataProvider(MarketDataProvider):
-    def __init__(self):
-        config = load_config()
-        self.api_key = config.birdeye_api_key
+    def __init__(self, api_key: str, logger=None):
+        self.api_key = api_key
         self.base_url = "https://public-api.birdeye.so/defi/history_price"
+        self.logger = logger
 
     def get_price_history(self, token_address: str, center_time: datetime, seconds_window: int = 300) -> List[MarketData]:
         """
@@ -65,8 +64,9 @@ class BirdeyeMarketDataProvider(MarketDataProvider):
                 ))
 
         except Exception as e:
-            # Do not crash enrichment if API fails
-            import logging
-            logging.warning(f"⚠️ Birdeye API failed for {token_address}: {e}")
+            if self.logger:
+                self.logger.log(f"⚠️ Birdeye API failed for {token_address}: {e}", level="WARNING")
+            else:
+                print(f"⚠️ Birdeye API failed for {token_address}: {e}")
 
         return results

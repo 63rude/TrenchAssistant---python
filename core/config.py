@@ -1,20 +1,20 @@
 import json
 from dataclasses import dataclass, asdict
-from typing import Optional, Dict
+from typing import Optional
 from pathlib import Path
 
-CONFIG_FILE = Path("config.json")  
+CONFIG_FILE = Path("config.json")
 
 @dataclass
 class BotConfig:
-    wallet_address: Optional[str] = "JCTWXiaHojRPi4axoYBVgojAZgUZzpsJm27TJbpyYkj4"
-    solanafm_api_key: Optional[str] = "sk_live_f2f9cf5ce6024a409c04b0d41af50ec9"
-    birdeye_api_key: Optional[str] = "dca7cd0a02b64f6b840aa9e02b22df99"
+    wallet_address: Optional[str] = None
+    solanafm_api_key: Optional[str] = None
+    birdeye_key_file: str = "api_keys_birdeye.json"
     refresh_interval: int = 2  # in seconds
-    run_minutes: int = 1  # run time
-    db_path: str = "data/transactions.db"
-    export_path: str = "exports/"
-    default_supply: int = 1_000_000_000  
+    run_minutes: int = 1       # bot run time in minutes
+    db_base_path: str = "data/"     # base folder for temp DBs
+    export_path: str = "exports/"   # folder for exporting files
+    default_supply: int = 1_000_000_000  # default token supply if unknown
 
 def save_config(config: BotConfig, path: Path = CONFIG_FILE) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -22,6 +22,7 @@ def save_config(config: BotConfig, path: Path = CONFIG_FILE) -> None:
         json.dump(asdict(config), f, indent=4)
 
 def load_config(path: Path = CONFIG_FILE) -> BotConfig:
+    path = Path(path)
     if not path.exists():
         return BotConfig()
     with open(path, "r") as f:

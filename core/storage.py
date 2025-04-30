@@ -1,5 +1,6 @@
 import sqlite3
 from pathlib import Path
+import os
 
 def init_db(path: str):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -19,7 +20,7 @@ def init_db(path: str):
             amount_human REAL,
             price_usd REAL,
             amount_usd REAL,
-            market_cap_usd REAL  -- 🆕 New column for market cap
+            market_cap_usd REAL
         )
     """)
 
@@ -54,7 +55,7 @@ def insert_raw_transfer(tx: dict, db_path: str):
         tx.get("amount_human"),
         tx.get("price_usd"),
         tx.get("amount_usd"),
-        tx.get("market_cap_usd")  # 🆕 Insert market cap
+        tx.get("market_cap_usd")
     ))
     conn.commit()
     conn.close()
@@ -81,3 +82,12 @@ def load_last_page(db_path: str) -> int:
     except Exception as e:
         print("⚠️ Failed to load last page progress:", e)
         return 1
+
+def delete_db(db_path: str):
+    """Delete a session-specific database after it is finished."""
+    try:
+        if os.path.exists(db_path):
+            os.remove(db_path)
+            print(f"🗑️ Deleted temporary database: {db_path}")
+    except Exception as e:
+        print(f"⚠️ Failed to delete database {db_path}: {e}")

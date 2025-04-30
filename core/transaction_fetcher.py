@@ -1,9 +1,9 @@
 import requests
-from typing import List, Dict, Tuple
 import time
+from typing import List, Dict, Tuple, Optional
 
 class SolanaFMRawFetcher:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, max_valid_transfers: int = 50, logger=None):
         self.api_key = api_key
         self.base_url = "https://api.solana.fm"
         self.headers = {
@@ -11,16 +11,17 @@ class SolanaFMRawFetcher:
             "Authorization": f"Bearer {self.api_key}"
         }
         self.limit = 1000  # Max allowed for /transactions endpoint
-        self.max_valid_transfers = 150  # Cap on total BUY/SELL transactions
+        self.max_valid_transfers = max_valid_transfers
+        self.logger = logger
 
     def fetch_transfers(
         self,
         wallet_address: str,
         page: int = 1
     ) -> Tuple[List[Dict], List[str]]:
-        """Fetch SPL token transfers from a wallet using page-based batching.
-        Stops after collecting 50 valid BUY/SELL actions.
-        """
+        """Fetch SPL token transfers from a wallet using page-based batching."""
+        if self.logger:
+            self.logger.log(f"🔎 Fetching transactions page {page} for wallet {wallet_address}")
 
         tx_url = f"{self.base_url}/v0/accounts/{wallet_address}/transactions"
         params = {"page": page, "limit": self.limit}
@@ -30,6 +31,8 @@ class SolanaFMRawFetcher:
         tx_signatures = [tx["signature"] for tx in tx_data]
 
         if not tx_signatures:
+            if self.logger:
+                self.logger.log("🚫 No transactions found for page.")
             return [], []
 
         valid_transfers = []
@@ -74,8 +77,10 @@ class SolanaFMRawFetcher:
                             "action": action
                         })
 
-                    # ✅ Stop when we reach 150 valid buy/sell
+                    # ✅ Stop when we reach max_valid_transfers
                     if len(valid_transfers) >= self.max_valid_transfers:
+                        if self.logger:
+                            self.logger.log(f"✅ Reached {self.max_valid_transfers} valid transfers, stopping fetch.")
                         return valid_transfers, tx_signatures
 
             time.sleep(1)  # Avoid API spam

@@ -1,91 +1,115 @@
 from datetime import datetime, timedelta, timezone
 import time
-import logging
 import sqlite3
+import uuid
+from typing import Optional, List, Tuple, Dict
 
 from .config import load_config
 from .transaction_fetcher import SolanaFMRawFetcher
-from .storage import init_db, insert_raw_transfer, load_last_page, save_last_page
+from .market_data import BirdeyeMarketDataProvider
+from .storage import init_db, insert_raw_transfer, load_last_page, save_last_page, delete_db
 from .enricher import DatabaseEnricher, PriceEnricher
 from .analyzer import TradeAnalyzer
-from .models import Transaction
-from .utils import clean_transfer_database  # 🆕 this will be your cleanup logic
+from .models import Transaction, SessionResult
+from .utils import clean_transfer_database
+from .session_utils import load_used_addresses, save_used_address, kill_session_after
+from .api_key_manager import APIKeyManager
+from .session_logger import SessionLogger
 
 class MemeBot:
-    def __init__(self):
-        self.config = load_config()
-        self.fetcher = SolanaFMRawFetcher(self.config.solanafm_api_key)
-        self.wallet = self.config.wallet_address
+    def __init__(
+        self,
+        wallet_address: str,
+        solanafm_key: str,
+        birdeye_key_file: str,
+        config_path: str = "config.json",
+        session_id: Optional[str] = None,
+        max_valid_transfers: int = 50
+    ):
+        self.config = load_config(config_path)
+        self.wallet = wallet_address
+        self.session_id = session_id or str(uuid.uuid4())
+        self.db_path = f"{self.config.db_base_path}tmp_session_{self.session_id}.db"
+        self.logger = SessionLogger(self.session_id)
+        self.max_valid_transfers = max_valid_transfers
 
-    def run(self):
-        logging.info("🚀 Starting MemeBot (page-based pagination with resume)...")
-        init_db(self.config.db_path)
+        # Load and rotate API keys
+        self.solanafm_key = self.config.solanafm_api_key
+        self.birdeye_key = APIKeyManager(birdeye_key_file).get_key()
 
+        # Initialize providers
+        self.fetcher = SolanaFMRawFetcher(
+            api_key=self.solanafm_key,
+            max_valid_transfers=self.max_valid_transfers,
+            logger=self.logger
+        )
+        self.price_provider = BirdeyeMarketDataProvider(
+            api_key=self.birdeye_key,
+            logger=self.logger
+        )
+
+    def run(self) -> SessionResult:
+        self.logger.log(f"🚀 Starting MemeBot session {self.session_id} for wallet {self.wallet}")
+
+        # Prevent reuse of wallet
+        if self.wallet in load_used_addresses():
+            self.logger.log(f"🚫 Wallet {self.wallet} has already been analyzed.")
+            return None
+        save_used_address(self.wallet)
+
+        # Kill session if it exceeds max runtime
+        kill_session_after(600)  # 10 minutes
+
+        init_db(self.db_path)
         start_time = datetime.now(timezone.utc)
         end_time = start_time + timedelta(minutes=self.config.run_minutes)
-        total_logged = 0
-        page = load_last_page(self.config.db_path)
 
-        while datetime.now(timezone.utc) < end_time and total_logged < 150:
+        total_logged = 0
+        page = load_last_page(self.db_path)
+
+        while datetime.now(timezone.utc) < end_time and total_logged < self.max_valid_transfers:
             try:
-                logging.info(f"[🔄] Fetching page {page}...")
+                self.logger.log(f"[🔄] Fetching page {page}...")
                 transfers, _ = self.fetcher.fetch_transfers(self.wallet, page=page)
             except Exception as e:
-                logging.error(f"❌ Error during fetch: {e}")
-                logging.info("💡 Try again later — may be API limits or end of history.")
+                self.logger.log(f"❌ Error during fetch: {e}", level="ERROR")
                 break
 
             if not transfers:
-                logging.info("🚫 No transfers returned — stopping.")
+                self.logger.log("🚫 No transfers returned — stopping.")
                 break
 
             for tx in transfers:
-                if tx["destination"] == self.wallet:
-                    tx["action"] = "BUY"
-                elif tx["source"] == self.wallet:
-                    tx["action"] = "SELL"
-                else:
-                    continue
-
-                tx["token_symbol"] = None
-                tx["token_name"] = None
-                tx["decimals"] = None
-                tx["amount_human"] = None
-                tx["price_usd"] = None
-                tx["amount_usd"] = None
-                tx["market_cap_usd"] = None
-
-                insert_raw_transfer(tx, self.config.db_path)
+                insert_raw_transfer(tx, self.db_path)
                 total_logged += 1
 
-                if total_logged >= 150:
+                if total_logged >= self.max_valid_transfers:
                     break
 
-            save_last_page(self.config.db_path, page + 1)
+            save_last_page(self.db_path, page + 1)
             page += 1
-            logging.info(f"[+] Logged {len(transfers)} buys/sells (total so far: {total_logged})")
+            self.logger.log(f"[+] Logged {len(transfers)} buys/sells (total so far: {total_logged})")
             time.sleep(self.config.refresh_interval)
 
-        logging.info(f"\n✅ Done! {total_logged} total buys/sells logged to {self.config.db_path}")
+        self.logger.log(f"\n✅ Done! {total_logged} total buys/sells logged to {self.db_path}")
 
         # Enrich metadata
-        logging.info("\n🛠 Starting database enrichment (symbols, decimals)...")
-        enricher = DatabaseEnricher(self.config.db_path)
+        self.logger.log("\n🛠 Starting database enrichment (symbols, decimals)...")
+        enricher = DatabaseEnricher(self.db_path)
         enricher.run()
-        logging.info("\n🎉 Symbol and decimals enrichment completed!")
+        self.logger.log("\n🎉 Symbol and decimals enrichment completed!")
 
-        # 🧹 NEW: call custom cleaning logic
-        clean_transfer_database(self.config.db_path)
+        clean_transfer_database(self.db_path)
 
-        # Enrich prices
-        logging.info("\n🛠 Starting historical price enrichment...")
-        price_enricher = PriceEnricher(self.config.db_path)
+        # Enrich historical prices
+        self.logger.log("\n🛠 Starting historical price enrichment...")
+        price_enricher = PriceEnricher(self.db_path, self.price_provider)
         price_enricher.run()
-        logging.info("\n🎉 Historical price enrichment completed!")
+        self.logger.log("\n🎉 Historical price enrichment completed!")
 
         # Load and analyze
-        logging.info("\n📈 Running analysis...")
-        conn = sqlite3.connect(self.config.db_path)
+        self.logger.log("\n📈 Running analysis...")
+        conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("""
             SELECT 
@@ -97,7 +121,7 @@ class MemeBot:
                 amount_usd,
                 market_cap_usd,
                 action,
-                NULL -- placeholder for source
+                NULL
             FROM raw_transfers
             WHERE action IN ('BUY', 'SELL')
             ORDER BY timestamp ASC
@@ -120,29 +144,34 @@ class MemeBot:
             ))
 
         if not transactions:
-            logging.warning("⚠️ No transactions available for analysis.")
-            return
+            self.logger.log("⚠️ No transactions available for analysis.", level="WARNING")
+            delete_db(self.db_path)
+            raise RuntimeError("Session ended with no transactions to analyze.")
 
         analyzer = TradeAnalyzer(transactions)
-        results = analyzer.analyze()
+        analysis = analyzer.analyze()
 
-        logging.info("\n🎯 Analysis Results:")
-        logging.info(f"Total Profit (USD): {results['total_profit_usd']}")
-        logging.info(f"Win Rate: {results['win_rate'] * 100:.2f}%")
-        logging.info(f"Average Hold Time: {results['average_hold_time_human']}")
-        logging.info(f"Median Hold Time: {results['median_hold_time_human']}")
-        logging.info(f"Profit vs Market Cap Correlation: {results['profit_vs_market_cap_correlation']}")
+        session_result = SessionResult(
+            session_id=self.session_id,
+            wallet_address=self.wallet,
+            timestamp_started=start_time.strftime("%Y-%m-%d %H:%M:%S"),
+            timestamp_ended=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            total_profit_usd=analysis["total_profit_usd"],
+            win_rate=analysis["win_rate"],
+            average_hold_time_human=analysis["average_hold_time_human"],
+            median_hold_time_human=analysis["median_hold_time_human"],
+            profit_vs_market_cap_correlation=analysis["profit_vs_market_cap_correlation"],
+            best_trades=analysis["best_trades"],
+            worst_trades=analysis["worst_trades"],
+            best_token_by_profit=analysis["best_token_by_profit"],
+            worst_token_by_profit=analysis["worst_token_by_profit"],
+            start_date=analysis["start_date"],
+            end_date=analysis["end_date"]
+        )
 
-        if results["best_token_by_profit"]:
-            logging.info(f"Best Token: {results['best_token_by_profit'][0]} (Profit ${results['best_token_by_profit'][1]:.2f})")
+        # Final cleanup
+        delete_db(self.db_path)
+        self.logger.log("🧹 Temporary database deleted.")
 
-        if results["worst_token_by_profit"]:
-            logging.info(f"Worst Token: {results['worst_token_by_profit'][0]} (Profit ${results['worst_token_by_profit'][1]:.2f})")
-
-        if results["start_date"] and results["end_date"]:
-            logging.info(f"Analyzed Transactions From {results['start_date']} to {results['end_date']}")
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
-    bot = MemeBot()
-    bot.run()
+        self.logger.log(f"\n🎯 Session {self.session_id} finished successfully!")
+        return session_result

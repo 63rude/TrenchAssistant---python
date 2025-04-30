@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Optional, Literal, List, Tuple
 from datetime import datetime
 
@@ -31,6 +31,10 @@ class Trade:
 
 @dataclass
 class SessionResult:
+    session_id: str
+    wallet_address: str
+    timestamp_started: str
+    timestamp_ended: str
     total_profit_usd: float
     win_rate: float
     average_hold_time_human: str
@@ -42,3 +46,32 @@ class SessionResult:
     worst_token_by_profit: Optional[Tuple[str, float]]
     start_date: Optional[str]
     end_date: Optional[str]
+
+    def to_dict(self) -> dict:
+        return {
+            "session_id": self.session_id,
+            "wallet_address": self.wallet_address,
+            "timestamp_started": self.timestamp_started,
+            "timestamp_ended": self.timestamp_ended,
+            "total_profit_usd": self.total_profit_usd,
+            "win_rate": self.win_rate,
+            "average_hold_time_human": self.average_hold_time_human,
+            "median_hold_time_human": self.median_hold_time_human,
+            "profit_vs_market_cap_correlation": self.profit_vs_market_cap_correlation,
+            "best_trades": [self._trade_to_dict(t) for t in self.best_trades],
+            "worst_trades": [self._trade_to_dict(t) for t in self.worst_trades],
+            "best_token_by_profit": self.best_token_by_profit,
+            "worst_token_by_profit": self.worst_token_by_profit,
+            "start_date": self.start_date,
+            "end_date": self.end_date,
+        }
+
+    def _trade_to_dict(self, trade: Trade) -> dict:
+        return {
+            "buy_signature": trade.buy_tx.signature,
+            "sell_signature": trade.sell_tx.signature,
+            "profit_usd": trade.profit_usd,
+            "duration_secs": trade.duration_secs,
+            "token_symbol": trade.buy_tx.token_symbol,
+            "token_address": trade.buy_tx.token_address,
+        }

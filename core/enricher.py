@@ -90,9 +90,9 @@ class DatabaseEnricher:
         logging.info("✅ Symbol and decimals enrichment completed.")
 
 class PriceEnricher:
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, provider: BirdeyeMarketDataProvider):
         self.db_path = db_path
-        self.provider = BirdeyeMarketDataProvider()
+        self.provider = provider
         self.config = load_config()
 
     def run(self):
