@@ -6,6 +6,7 @@ import os
 import json
 import subprocess
 from filelock import FileLock
+import sys
 
 app = FastAPI()
 
@@ -16,6 +17,7 @@ BOT_STATUS_FILE = "bot_status.json"
 LOCK_FILE = "bot_status.json.lock"
 
 os.makedirs(RESULTS_FOLDER, exist_ok=True)
+os.makedirs(LOGS_FOLDER, exist_ok=True)
 
 # Load current session state from disk
 def load_session_states():
@@ -53,24 +55,21 @@ class StartSessionRequest(BaseModel):
 
 @app.post("/start_session")
 def start_session(request: StartSessionRequest):
-    session_id = str(uuid4())
-    states = load_session_states()
-
-    running_sessions = [s for s in states.values() if s["status"] == "Running"]
-    if len(running_sessions) >= 3:
-        raise HTTPException(status_code=429, detail="Server is busy. Try again later.")
-
-    start_time = datetime.utcnow().isoformat()
-    states[session_id] = {"status": "Running", "start_time": start_time, "end_time": None}
-    save_session_states(states)
-
     bot_key = assign_bot_config()
     if not bot_key:
         raise HTTPException(status_code=429, detail="All bot slots in use")
 
+    session_id = str(uuid4())
+    start_time = datetime.utcnow().isoformat()
+
+    states = load_session_states()
+    states[session_id] = {"status": "Running", "start_time": start_time, "end_time": None}
+    save_session_states(states)
+
     config_file = f"config_{bot_key}.json"
+
     subprocess.Popen([
-        "python", "bot_launcher.py",
+        sys.executable, "api/bot_launcher.py",
         request.wallet,
         session_id,
         config_file,

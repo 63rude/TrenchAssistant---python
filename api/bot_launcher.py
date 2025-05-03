@@ -5,6 +5,9 @@ from datetime import datetime
 from pathlib import Path
 from filelock import FileLock
 
+# Fix import errors by adding project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from core.bot import MemeBot
 from core.config import load_config
 
@@ -14,7 +17,7 @@ BOT_STATUS_FILE = "api/bot_status.json"
 LOCK_FILE = "api/bot_status.json.lock"
 SESSION_STATE_FILE = "session_state.json"
 
-# Make sure results folder exists
+# Ensure results directory exists
 os.makedirs(RESULTS_FOLDER, exist_ok=True)
 
 def free_bot(bot_key: str):
@@ -41,13 +44,15 @@ def update_session_state(session_id: str, status: str):
 
 def main():
     if len(sys.argv) != 5:
-        print("Usage: bot_launcher.py <wallet> <session_id> <config_file> <bot_key>")
+        print("❌ Usage: bot_launcher.py <wallet> <session_id> <config_file> <bot_key>")
         sys.exit(1)
 
     wallet = sys.argv[1]
     session_id = sys.argv[2]
     config_path = sys.argv[3]
     bot_key = sys.argv[4]
+
+    print(f"🚀 Launching bot for session: {session_id}, bot_key: {bot_key}, wallet: {wallet}")
 
     try:
         config = load_config(Path(config_path))
@@ -59,17 +64,20 @@ def main():
         )
         result = bot.run()
 
-        with open(f"{RESULTS_FOLDER}/{session_id}.json", "w") as f:
+        result_path = Path(RESULTS_FOLDER) / f"{session_id}.json"
+        with open(result_path, "w") as f:
             json.dump(result.to_dict(), f, indent=4)
 
         update_session_state(session_id, "Completed")
+        print(f"✅ Session {session_id} completed successfully.")
 
     except Exception as e:
-        print(f"❌ Bot error: {e}")
+        print(f"❌ Bot error during session {session_id}: {e}")
         update_session_state(session_id, "Failed")
 
     finally:
         free_bot(bot_key)
+        print(f"🔓 Bot {bot_key} released.")
 
 if __name__ == "__main__":
     main()

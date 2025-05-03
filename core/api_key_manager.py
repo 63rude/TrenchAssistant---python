@@ -6,21 +6,19 @@ from filelock import FileLock
 class APIKeyManager:
     def __init__(self, key_file: str):
         self.key_file = Path(key_file)
-        self.lock_file = Path(str(key_file) + ".lock")
-        self.keys = self._load_keys()
+        self.lock_file = self.key_file.with_suffix(".lock")
+        self.keys = []
         self.active_key = self._get_next_key()
 
     def _load_keys(self) -> List[dict]:
-        with FileLock(self.lock_file):
-            if not self.key_file.exists():
-                raise FileNotFoundError(f"❌ Key file not found: {self.key_file}")
-            with open(self.key_file, "r") as f:
-                return json.load(f)
+        if not self.key_file.exists():
+            raise FileNotFoundError(f"❌ Key file not found: {self.key_file}")
+        with open(self.key_file, "r") as f:
+            return json.load(f)
 
     def _save_keys(self):
-        with FileLock(self.lock_file):
-            with open(self.key_file, "w") as f:
-                json.dump(self.keys, f, indent=4)
+        with open(self.key_file, "w") as f:
+            json.dump(self.keys, f, indent=4)
 
     def _get_next_key(self) -> str:
         with FileLock(self.lock_file):
