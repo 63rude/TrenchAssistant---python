@@ -1,0 +1,9 @@
+{
+    "solanafm_api_key": "sk_live_f2f9cf5ce6024a409c04b0d41af50ec9",
+    "birdeye_key_file": "api_keys_bot3.json",
+    "refresh_interval": 2,
+    "run_minutes": 1,
+    "db_base_path": "data/",
+    "export_path": "exports/",
+    "default_supply": 1000000000
+  }

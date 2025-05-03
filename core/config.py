@@ -7,14 +7,13 @@ CONFIG_FILE = Path("config.json")
 
 @dataclass
 class BotConfig:
-    wallet_address: Optional[str] = None
     solanafm_api_key: Optional[str] = None
-    birdeye_key_file: str = "api_keys_birdeye.json"
-    refresh_interval: int = 2  # in seconds
-    run_minutes: int = 1       # bot run time in minutes
-    db_base_path: str = "data/"     # base folder for temp DBs
-    export_path: str = "exports/"   # folder for exporting files
-    default_supply: int = 1_000_000_000  # default token supply if unknown
+    birdeye_key_file: Optional[str] = None
+    refresh_interval: int = 2
+    run_minutes: int = 1
+    db_base_path: str = "data/"
+    export_path: str = "exports/"
+    default_supply: int = 1_000_000_000
 
 def save_config(config: BotConfig, path: Path = CONFIG_FILE) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

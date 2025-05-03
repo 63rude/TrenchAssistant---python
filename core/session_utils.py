@@ -4,20 +4,24 @@ import threading
 import time
 from pathlib import Path
 from typing import Set
+from filelock import FileLock
 
 USED_ADDRESSES_FILE = "used_addresses.json"
+LOCK_FILE = "used_addresses.lock"
 
 def load_used_addresses(path: str = USED_ADDRESSES_FILE) -> Set[str]:
-    if Path(path).exists():
-        with open(path, "r") as f:
-            return set(json.load(f))
-    return set()
+    with FileLock(LOCK_FILE):
+        if Path(path).exists():
+            with open(path, "r") as f:
+                return set(json.load(f))
+        return set()
 
 def save_used_address(address: str, path: str = USED_ADDRESSES_FILE):
-    addresses = load_used_addresses(path)
-    addresses.add(address)
-    with open(path, "w") as f:
-        json.dump(list(addresses), f, indent=4)
+    with FileLock(LOCK_FILE):
+        addresses = load_used_addresses(path)
+        addresses.add(address)
+        with open(path, "w") as f:
+            json.dump(list(addresses), f, indent=4)
 
 def delete_db(db_path: str):
     """Delete the temporary database file after the session ends."""
