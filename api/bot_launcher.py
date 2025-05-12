@@ -12,10 +12,12 @@ from core.bot import MemeBot
 from core.config import load_config
 
 # Constants
-RESULTS_FOLDER = "results"
-BOT_STATUS_FILE = "api/bot_status.json"
-LOCK_FILE = "api/bot_status.json.lock"
-SESSION_STATE_FILE = "session_state.json"
+BASE_PERSISTENT = Path("/var/data")
+RESULTS_FOLDER = BASE_PERSISTENT / "results"
+BOT_STATUS_FILE = BASE_PERSISTENT / "bot_status.json"
+LOCK_FILE = BASE_PERSISTENT / "bot_status.lock"
+SESSION_STATE_FILE = BASE_PERSISTENT / "session_state.json"
+
 
 # Ensure results directory exists
 os.makedirs(RESULTS_FOLDER, exist_ok=True)

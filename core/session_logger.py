@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 
 class SessionLogger:
-    def __init__(self, session_id: str, log_folder: str = "logs/"):
+    def __init__(self, session_id: str, log_folder: str = "/var/data/logs/"):
         self.session_id = session_id
         self.log_folder = log_folder
         os.makedirs(log_folder, exist_ok=True)

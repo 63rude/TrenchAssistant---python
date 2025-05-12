@@ -3,7 +3,7 @@ from dataclasses import dataclass, asdict
 from typing import Optional
 from pathlib import Path
 
-CONFIG_FILE = Path("config.json")
+CONFIG_FILE = Path("/var/data/config.json")
 
 @dataclass
 class BotConfig:

@@ -8,7 +8,7 @@ import json
 import subprocess
 from filelock import FileLock
 import sys
-
+from pathlib import Path
 app = FastAPI()
 
 # ✅ CORS setup for your frontend domain
@@ -20,11 +20,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SESSION_STATE_FILE = "session_state.json"
-RESULTS_FOLDER = "results"
-LOGS_FOLDER = "logs"
-BOT_STATUS_FILE = "api/bot_status.json"
-LOCK_FILE = "api/bot_status.json.lock"
+BASE_PERSISTENT = Path("/var/data")
+
+SESSION_STATE_FILE = BASE_PERSISTENT / "session_state.json"
+RESULTS_FOLDER = BASE_PERSISTENT / "results"
+LOGS_FOLDER = BASE_PERSISTENT / "logs"
+BOT_STATUS_FILE = BASE_PERSISTENT / "bot_status.json"
+LOCK_FILE = BASE_PERSISTENT / "bot_status.lock"
 
 os.makedirs(RESULTS_FOLDER, exist_ok=True)
 os.makedirs(LOGS_FOLDER, exist_ok=True)

@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Set
 from filelock import FileLock, Timeout
 
-USED_ADDRESSES_FILE = "used_addresses.json"
-LOCK_FILE = "used_addresses.lock"
+USED_ADDRESSES_FILE = "/var/data/used_addresses.json"
+LOCK_FILE = "/var/data/used_addresses.lock"
 
 def _load_addresses_unlocked(path: str) -> Set[str]:
     if Path(path).exists():
