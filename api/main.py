@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from uuid import uuid4
 from datetime import datetime
@@ -7,13 +8,13 @@ import json
 import subprocess
 from filelock import FileLock
 import sys
-from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
+# ✅ CORS setup for your frontend domain
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # or ["*"] for testing
+    allow_origins=["https://trenchassistant.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -28,19 +29,16 @@ LOCK_FILE = "api/bot_status.json.lock"
 os.makedirs(RESULTS_FOLDER, exist_ok=True)
 os.makedirs(LOGS_FOLDER, exist_ok=True)
 
-# Load current session state from disk
 def load_session_states():
     if os.path.exists(SESSION_STATE_FILE):
         with open(SESSION_STATE_FILE, "r") as f:
             return json.load(f)
     return {}
 
-# Save updated session state to disk
 def save_session_states(state):
     with open(SESSION_STATE_FILE, "w") as f:
         json.dump(state, f, indent=4)
 
-# Assign the next available bot slot
 def assign_bot_config():
     with FileLock(LOCK_FILE):
         if not os.path.exists(BOT_STATUS_FILE):
@@ -95,6 +93,10 @@ def start_session(request: StartSessionRequest):
         raise HTTPException(status_code=500, detail="Failed to launch bot process")
 
     return {"session_id": session_id, "status": "started", "bot": bot_key}
+
+@app.get("/")
+def root():
+    return {"message": "TrenchAssistant API is live."}
 
 @app.get("/get_session_status/{session_id}")
 def get_session_status(session_id: str):
