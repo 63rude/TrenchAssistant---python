@@ -48,7 +48,7 @@ class MemeBot:
         )
 
     def run(self) -> SessionResult:
-        self.logger.log(f"Starting MemeBot session {self.session_id} for wallet {self.wallet}")
+        self.logger.log(f"Starting TrenchAssitant session {self.session_id} for wallet {self.wallet}")
 
         # Prevent reuse of wallet
         if self.wallet in load_used_addresses():
