@@ -1,7 +1,7 @@
 import sys
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from filelock import FileLock
 
@@ -54,7 +54,7 @@ def main():
 
     print(f"Launching bot for session: {session_id}, bot_key: {bot_key}, wallet: {wallet}")
 
-    result = None  # initialize outside try to detect null runs
+    result = None
 
     try:
         config = load_config(Path(config_path))
@@ -67,19 +67,37 @@ def main():
 
         result = bot.run()
 
-        if result is None:
-            raise RuntimeError("Bot.run() returned None. Possibly due to reused wallet or empty transfer set.")
-
         result_path = Path(RESULTS_FOLDER) / f"{wallet}.json"
-        with open(result_path, "w") as f:
-            json.dump(result.to_dict(), f, indent=4)
+
+        if result is not None:
+            with open(result_path, "w") as f:
+                json.dump(result.to_dict(), f, indent=4)
+        else:
+            print("⚠️ Warning: bot.run() returned None. Writing fallback result file.")
+            fallback = {
+                "summary_stats": None,
+                "best_trades": [],
+                "worst_trades": [],
+                "errors": ["Bot.run() returned None. Possibly due to reused wallet or no valid trades."]
+            }
+            with open(result_path, "w") as f:
+                json.dump(fallback, f, indent=4)
 
         update_session_state(session_id, "Completed")
         print(f"Session {session_id} completed successfully.")
 
     except Exception as e:
-        print(f"Bot error during session {session_id}: {e}")
+        print(f"❌ Bot error during session {session_id}: {e}")
         update_session_state(session_id, "Failed")
+        # Optionally: write a minimal error result file
+        result_path = Path(RESULTS_FOLDER) / f"{wallet}.json"
+        with open(result_path, "w") as f:
+            json.dump({
+                "summary_stats": None,
+                "best_trades": [],
+                "worst_trades": [],
+                "errors": [str(e)]
+            }, f, indent=4)
 
     finally:
         try:
