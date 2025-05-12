@@ -77,7 +77,7 @@ def start_session(request: StartSessionRequest):
     save_session_states(states)
 
     config_file = f"config_{bot_key}.json"
-    log_path = os.path.join(LOGS_FOLDER, f"spawn_{session_id}.log")
+    log_path = LOGS_FOLDER / f"session_{session_id}.log"
 
     try:
         with open(log_path, "w") as log_file:
