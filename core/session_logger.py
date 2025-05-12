@@ -12,14 +12,13 @@ class SessionLogger:
     def log(self, message: str, level: str = "INFO"):
         timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         formatted_message = f"{timestamp} [{level}] {message}"
-        
-        # Print to console
-        print(formatted_message)
-        
-        # Save in memory
+
+        # ✅ Print safe version to console (strip emojis for Windows)
+        safe_console_message = formatted_message.encode("ascii", errors="ignore").decode()
+        print(safe_console_message)
+
+        # ✅ Save full version (with emojis) to memory and UTF-8 file
         self.messages.append(formatted_message)
-        
-        # Save to file
         with open(self.log_file_path, "a", encoding="utf-8") as f:
             f.write(formatted_message + "\n")
 

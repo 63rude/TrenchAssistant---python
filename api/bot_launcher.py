@@ -1,7 +1,7 @@
 import sys
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from filelock import FileLock
 
@@ -38,13 +38,13 @@ def update_session_state(session_id: str, status: str):
         states = {}
     if session_id in states:
         states[session_id]["status"] = status
-        states[session_id]["end_time"] = datetime.utcnow().isoformat()
+        states[session_id]["end_time"] = datetime.now(timezone.utc).isoformat()
     with open(SESSION_STATE_FILE, "w") as f:
         json.dump(states, f, indent=4)
 
 def main():
     if len(sys.argv) != 5:
-        print("❌ Usage: bot_launcher.py <wallet> <session_id> <config_file> <bot_key>")
+        print("Usage: bot_launcher.py <wallet> <session_id> <config_file> <bot_key>")
         sys.exit(1)
 
     wallet = sys.argv[1]
@@ -52,7 +52,9 @@ def main():
     config_path = sys.argv[3]
     bot_key = sys.argv[4]
 
-    print(f"🚀 Launching bot for session: {session_id}, bot_key: {bot_key}, wallet: {wallet}")
+    print(f"Launching bot for session: {session_id}, bot_key: {bot_key}, wallet: {wallet}")
+
+    result = None  # initialize outside try to detect null runs
 
     try:
         config = load_config(Path(config_path))
@@ -62,22 +64,29 @@ def main():
             birdeye_key_file=config.birdeye_key_file,
             session_id=session_id
         )
+
         result = bot.run()
 
-        result_path = Path(RESULTS_FOLDER) / f"{session_id}.json"
+        if result is None:
+            raise RuntimeError("Bot.run() returned None. Possibly due to reused wallet or empty transfer set.")
+
+        result_path = Path(RESULTS_FOLDER) / f"{wallet}.json"
         with open(result_path, "w") as f:
             json.dump(result.to_dict(), f, indent=4)
 
         update_session_state(session_id, "Completed")
-        print(f"✅ Session {session_id} completed successfully.")
+        print(f"Session {session_id} completed successfully.")
 
     except Exception as e:
-        print(f"❌ Bot error during session {session_id}: {e}")
+        print(f"Bot error during session {session_id}: {e}")
         update_session_state(session_id, "Failed")
 
     finally:
-        free_bot(bot_key)
-        print(f"🔓 Bot {bot_key} released.")
+        try:
+            free_bot(bot_key)
+            print(f"Bot {bot_key} released.")
+        except Exception as e:
+            print(f"Failed to release bot {bot_key}: {e}")
 
 if __name__ == "__main__":
     main()

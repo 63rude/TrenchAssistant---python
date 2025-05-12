@@ -3,7 +3,8 @@ import requests
 import math
 import time
 import logging
-from typing import List
+from typing import List, Dict, Tuple, Optional
+from collections import defaultdict
 from datetime import datetime
 from .market_data import BirdeyeMarketDataProvider
 from .config import load_config
@@ -38,7 +39,7 @@ class DatabaseEnricher:
 
             for idx, token_info in enumerate(data.get("data", [])):
                 if token_info is None:
-                    logging.warning(f"⚠️ No metadata found for mint: {batch[idx]}")
+                    logging.warning(f"No metadata found for mint: {batch[idx]}")
                     result.append({
                         "address": batch[idx],
                         "symbol": f"UNKNOWN_{unknown_counter}",
@@ -84,10 +85,10 @@ class DatabaseEnricher:
     def run(self):
         """Main function to enrich the database."""
         tokens = self.get_unique_tokens()
-        logging.info(f"🔍 Found {len(tokens)} unique tokens to enrich.")
+        logging.info(f"Found {len(tokens)} unique tokens to enrich.")
         metadata = self.fetch_token_metadata(tokens)
         self.update_database(metadata)
-        logging.info("✅ Symbol and decimals enrichment completed.")
+        logging.info("Symbol and decimals enrichment completed.")
 
 class PriceEnricher:
     def __init__(self, db_path: str, provider: BirdeyeMarketDataProvider):
@@ -109,41 +110,57 @@ class PriceEnricher:
         """)
         rows = cursor.fetchall()
 
-        logging.info(f"🔄 Found {len(rows)} transfers needing historical price enrichment.")
+        logging.info(f"Found {len(rows)} transfers needing historical price enrichment.")
 
-        for row in rows:
-            rowid, token_address, timestamp, amount_human = row
-            dt_object = datetime.utcfromtimestamp(timestamp)
+        # ✅ Round timestamps to nearest minute and collect unique pairs
+        token_time_map: Dict[Tuple[str, int], List[Tuple[int, float]]] = defaultdict(list)
+
+        for rowid, token, timestamp, amount_human in rows:
+            # Round to nearest minute
+            rounded_ts = int(round(timestamp / 10) * 10)
+            token_time_map[(token, rounded_ts)].append((rowid, amount_human))
+
+        logging.info(f"Will enrich {len(token_time_map)} unique (token, time) pairs.")
+
+        for (token_address, rounded_ts), entries in token_time_map.items():
+            dt_object = datetime.utcfromtimestamp(rounded_ts)
 
             try:
-                # ✅ NEW: fetch prices in ±5min window
                 prices = self.provider.get_price_history(token_address, dt_object)
 
                 if prices:
-                    # ✅ NEW: choose the price closest to the transaction time
-                    best_price = min(prices, key=lambda p: abs((p.timestamp - dt_object).total_seconds()))
+                    # Find price within ±10 seconds
+                    best_price = min(
+                        prices,
+                        key=lambda p: abs((p.timestamp - dt_object).total_seconds())
+                    )
                     price_usd = best_price.price_usd
-                    amount_usd = amount_human * price_usd
                     market_cap_usd = price_usd * self.config.default_supply
 
-                    cursor.execute("""
-                        UPDATE raw_transfers
-                        SET
-                            price_usd = ?,
-                            amount_usd = ?,
-                            market_cap_usd = ?
-                        WHERE rowid = ?
-                    """, (price_usd, amount_usd, market_cap_usd, rowid))
+                    for rowid, amount_human in entries:
+                        amount_usd = amount_human * price_usd
+
+                        cursor.execute("""
+                            UPDATE raw_transfers
+                            SET
+                                price_usd = ?,
+                                amount_usd = ?,
+                                market_cap_usd = ?
+                            WHERE rowid = ?
+                        """, (price_usd, amount_usd, market_cap_usd, rowid))
 
                     conn.commit()
+                    logging.info(f"Updated {len(entries)} rows for {token_address} at {dt_object}")
+
                 else:
-                    logging.warning(f"⚠️ No price data found for token {token_address} near {timestamp}")
+                    logging.warning(f"No price found for {token_address} near {dt_object}")
 
             except Exception as e:
-                logging.warning(f"⚠️ Failed to fetch price for {token_address} at {timestamp}: {e}")
+                logging.warning(f"Failed price fetch for {token_address} at {dt_object}: {e}")
 
-            time.sleep(1)  # Respect Birdeye 60 RPM limit
+            time.sleep(1)  # 60 RPM max
 
         conn.close()
-        logging.info("✅ Historical price and market cap enrichment completed.")
+        logging.info("Historical price and market cap enrichment completed.")
+
 

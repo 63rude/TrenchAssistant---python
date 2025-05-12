@@ -1,32 +1,44 @@
 from typing import List, Dict, Optional
 from collections import defaultdict
 from datetime import datetime
-from .models import Transaction, Trade
+from .models import Transaction, TokenTradeAggregate
 import math
 
 class TradeAnalyzer:
     def __init__(self, transactions: List[Transaction]):
         self.transactions = sorted(transactions, key=lambda tx: tx.timestamp)
-        self.trades: List[Trade] = []
-        self.unmatched_buys: Dict[str, List[Transaction]] = defaultdict(list)
+        self.aggregated_trades: List[TokenTradeAggregate] = []
 
-    def match_trades(self):
-        """Matches buys and sells using FIFO per token_address."""
+    def aggregate_trades(self):
+        """Aggregate all buys and sells per token into a single trade entry."""
+        token_groups = defaultdict(lambda: {"buys": [], "sells": []})
+
         for tx in self.transactions:
             if tx.type == "BUY":
-                self.unmatched_buys[tx.token_address].append(tx)
+                token_groups[tx.token_address]["buys"].append(tx)
             elif tx.type == "SELL":
-                buy_list = self.unmatched_buys[tx.token_address]
-                if buy_list:
-                    buy_tx = buy_list.pop(0)
-                    profit = (tx.amount_usd or 0) - (buy_tx.amount_usd or 0)
-                    duration = (tx.timestamp - buy_tx.timestamp).total_seconds()
-                    self.trades.append(Trade(
-                        buy_tx=buy_tx,
-                        sell_tx=tx,
-                        profit_usd=round(profit, 4),
-                        duration_secs=duration
-                    ))
+                token_groups[tx.token_address]["sells"].append(tx)
+
+        for token, group in token_groups.items():
+            buys = group["buys"]
+            sells = group["sells"]
+            if not buys or not sells:
+                continue
+
+            profit = sum(s.amount_usd or 0 for s in sells) - sum(b.amount_usd or 0 for b in buys)
+            duration = (max(s.timestamp for s in sells) - min(b.timestamp for b in buys)).total_seconds()
+            symbol = (buys[0].token_symbol or sells[0].token_symbol or "UNKNOWN")
+            market_cap_usd = buys[0].market_cap_usd if buys[0].market_cap_usd is not None else None
+
+            self.aggregated_trades.append(TokenTradeAggregate(
+                token=token,
+                profit_usd=round(profit, 4),
+                duration_secs=duration,
+                symbol=symbol,
+                total_buys=len(buys),
+                total_sells=len(sells),
+                market_cap_usd=market_cap_usd
+            ))
 
     def calculate_human_readable_time(self, seconds: float) -> str:
         """Convert seconds to human-readable format."""
@@ -56,17 +68,23 @@ class TradeAnalyzer:
         return round(numerator / denominator, 4)
 
     def analyze(self) -> Dict:
-        self.match_trades()
+        self.aggregate_trades()
 
-        total_profit = sum(t.profit_usd for t in self.trades)
-        best_trades = sorted(self.trades, key=lambda t: t.profit_usd, reverse=True)[:3]
-        worst_trades = sorted(self.trades, key=lambda t: t.profit_usd)[:3]
+        total_profit = sum(t.profit_usd for t in self.aggregated_trades)
 
-        win_count = sum(1 for t in self.trades if t.profit_usd > 0)
-        win_rate = round(win_count / len(self.trades), 4) if self.trades else 0.0
+        if len(self.aggregated_trades) >= 2:
+            best_trades = sorted(self.aggregated_trades, key=lambda t: t.profit_usd, reverse=True)[:3]
+            worst_trades = sorted(self.aggregated_trades, key=lambda t: t.profit_usd)[:3]
+        else:
+            best_trades = []
+            worst_trades = []
 
-        avg_hold_secs = sum(t.duration_secs for t in self.trades) / len(self.trades) if self.trades else 0
-        hold_times = sorted(t.duration_secs for t in self.trades)
+        win_count = sum(1 for t in self.aggregated_trades if t.profit_usd > 0)
+        win_rate = round(win_count / len(self.aggregated_trades), 4) if self.aggregated_trades else 0.0
+
+        avg_hold_secs = sum(t.duration_secs for t in self.aggregated_trades) / len(self.aggregated_trades) if self.aggregated_trades else 0
+        hold_times = sorted(t.duration_secs for t in self.aggregated_trades)
+
         n = len(hold_times)
         if n > 0:
             if n % 2 == 1:
@@ -76,21 +94,15 @@ class TradeAnalyzer:
         else:
             median_hold_secs = 0
 
-        # Profit vs Market Cap Correlation
-        profits = []
-        market_caps = []
-        for trade in self.trades:
-            if trade.buy_tx.market_cap_usd is not None:
-                profits.append(trade.profit_usd)
-                market_caps.append(trade.buy_tx.market_cap_usd)
-
-        correlation = self.calculate_pearson_correlation(market_caps, profits)
+        # Use real market cap for correlation
+        profits = [t.profit_usd for t in self.aggregated_trades if t.market_cap_usd is not None]
+        market_caps = [t.market_cap_usd for t in self.aggregated_trades if t.market_cap_usd is not None]
+        correlation = self.calculate_pearson_correlation(market_caps, profits) if len(market_caps) >= 2 else None
 
         # Best and Worst Tokens by total profit
         token_profits = defaultdict(float)
-        for trade in self.trades:
-            symbol = trade.buy_tx.token_symbol or "UNKNOWN"
-            token_profits[symbol] += trade.profit_usd
+        for trade in self.aggregated_trades:
+            token_profits[trade.symbol] += trade.profit_usd
 
         best_token = None
         worst_token = None
@@ -117,5 +129,6 @@ class TradeAnalyzer:
             "best_token_by_profit": best_token,
             "worst_token_by_profit": worst_token,
             "start_date": start_date,
-            "end_date": end_date
+            "end_date": end_date,
+            "aggregated_trades": self.aggregated_trades
         }

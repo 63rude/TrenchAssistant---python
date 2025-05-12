@@ -80,7 +80,7 @@ def load_last_page(db_path: str) -> int:
         conn.close()
         return int(row[0]) if row else 1
     except Exception as e:
-        print("⚠️ Failed to load last page progress:", e)
+        print("Failed to load last page progress:", e)
         return 1
 
 def delete_db(db_path: str):
@@ -88,6 +88,6 @@ def delete_db(db_path: str):
     try:
         if os.path.exists(db_path):
             os.remove(db_path)
-            print(f"🗑️ Deleted temporary database: {db_path}")
+            print(f"Deleted temporary database: {db_path}")
     except Exception as e:
-        print(f"⚠️ Failed to delete database {db_path}: {e}")
+        print(f"Failed to delete database {db_path}: {e}")

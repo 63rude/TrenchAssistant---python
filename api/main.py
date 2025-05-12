@@ -7,14 +7,23 @@ import json
 import subprocess
 from filelock import FileLock
 import sys
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # or ["*"] for testing
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 SESSION_STATE_FILE = "session_state.json"
 RESULTS_FOLDER = "results"
 LOGS_FOLDER = "logs"
-BOT_STATUS_FILE = "bot_status.json"
-LOCK_FILE = "bot_status.json.lock"
+BOT_STATUS_FILE = "api/bot_status.json"
+LOCK_FILE = "api/bot_status.json.lock"
 
 os.makedirs(RESULTS_FOLDER, exist_ok=True)
 os.makedirs(LOGS_FOLDER, exist_ok=True)
@@ -46,6 +55,7 @@ def assign_bot_config():
                 status[bot] = "IN_USE"
                 with open(BOT_STATUS_FILE, "w") as f:
                     json.dump(status, f, indent=4)
+                print(f"Assigned bot slot: {bot}")
                 return bot
 
         return None
@@ -67,14 +77,22 @@ def start_session(request: StartSessionRequest):
     save_session_states(states)
 
     config_file = f"config_{bot_key}.json"
+    log_path = os.path.join(LOGS_FOLDER, f"spawn_{session_id}.log")
 
-    subprocess.Popen([
-        sys.executable, "api/bot_launcher.py",
-        request.wallet,
-        session_id,
-        config_file,
-        bot_key
-    ])
+    try:
+        with open(log_path, "w") as log_file:
+            subprocess.Popen([
+                sys.executable, "api/bot_launcher.py",
+                request.wallet,
+                session_id,
+                config_file,
+                bot_key
+            ], stdout=log_file, stderr=log_file)
+
+        print(f"Launched bot subprocess for session {session_id}, writing to {log_path}")
+    except Exception as e:
+        print(f"Failed to launch subprocess: {e}")
+        raise HTTPException(status_code=500, detail="Failed to launch bot process")
 
     return {"session_id": session_id, "status": "started", "bot": bot_key}
 
@@ -94,11 +112,11 @@ def get_session_logs(session_id: str):
         lines = f.readlines()
     return {"logs": lines}
 
-@app.get("/get_session_result/{session_id}")
-def get_session_result(session_id: str):
-    result_path = os.path.join(RESULTS_FOLDER, f"{session_id}.json")
+@app.get("/get_session_result_by_wallet/{wallet}")
+def get_session_result(wallet: str):
+    result_path = os.path.join(RESULTS_FOLDER, f"{wallet}.json")
     if not os.path.exists(result_path):
-        raise HTTPException(status_code=404, detail="Result not found")
+        raise HTTPException(status_code=404, detail="Results not found for this wallet")
     with open(result_path, "r", encoding="utf-8") as f:
         result = json.load(f)
     return result

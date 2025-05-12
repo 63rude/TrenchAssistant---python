@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from typing import Optional, Literal, List, Tuple
 from datetime import datetime
 
@@ -30,6 +30,16 @@ class Trade:
     duration_secs: float
 
 @dataclass
+class TokenTradeAggregate:
+    token: str
+    symbol: str
+    profit_usd: float
+    duration_secs: float
+    total_buys: int
+    total_sells: int
+    market_cap_usd: Optional[float] = None
+
+@dataclass
 class SessionResult:
     session_id: str
     wallet_address: str
@@ -46,6 +56,7 @@ class SessionResult:
     worst_token_by_profit: Optional[Tuple[str, float]]
     start_date: Optional[str]
     end_date: Optional[str]
+    aggregated_trades: Optional[List[TokenTradeAggregate]] = None
 
     def to_dict(self) -> dict:
         return {
@@ -58,20 +69,32 @@ class SessionResult:
             "average_hold_time_human": self.average_hold_time_human,
             "median_hold_time_human": self.median_hold_time_human,
             "profit_vs_market_cap_correlation": self.profit_vs_market_cap_correlation,
-            "best_trades": [self._trade_to_dict(t) for t in self.best_trades],
-            "worst_trades": [self._trade_to_dict(t) for t in self.worst_trades],
+            "best_trades": [self._trade_to_dict(t) for t in self.best_trades] if self.aggregated_trades and len(self.aggregated_trades) >= 2 else [],
+            "worst_trades": [self._trade_to_dict(t) for t in self.worst_trades] if self.aggregated_trades and len(self.aggregated_trades) >= 2 else [],
             "best_token_by_profit": self.best_token_by_profit,
             "worst_token_by_profit": self.worst_token_by_profit,
             "start_date": self.start_date,
             "end_date": self.end_date,
+            "aggregated_trades": [
+                {
+                    "token": t.token,
+                    "symbol": t.symbol,
+                    "profit_usd": t.profit_usd,
+                    "duration_secs": t.duration_secs,
+                    "total_buys": t.total_buys,
+                    "total_sells": t.total_sells
+                }
+                for t in self.aggregated_trades
+            ] if self.aggregated_trades else [],
         }
 
-    def _trade_to_dict(self, trade: Trade) -> dict:
+    def _trade_to_dict(self, trade) -> dict:
         return {
-            "buy_signature": trade.buy_tx.signature,
-            "sell_signature": trade.sell_tx.signature,
+            "token_address": trade.token,
+            "token_symbol": trade.symbol,
             "profit_usd": trade.profit_usd,
             "duration_secs": trade.duration_secs,
-            "token_symbol": trade.buy_tx.token_symbol,
-            "token_address": trade.buy_tx.token_address,
+            "total_buys": trade.total_buys,
+            "total_sells": trade.total_sells
         }
+

@@ -40,8 +40,7 @@ class MemeBot:
         # Initialize providers
         self.fetcher = SolanaFMRawFetcher(
             api_key=self.solanafm_key,
-            max_valid_transfers=self.max_valid_transfers,
-            logger=self.logger
+            logger=self.logger,
         )
         self.price_provider = BirdeyeMarketDataProvider(
             api_key=self.birdeye_key,
@@ -49,11 +48,11 @@ class MemeBot:
         )
 
     def run(self) -> SessionResult:
-        self.logger.log(f"🚀 Starting MemeBot session {self.session_id} for wallet {self.wallet}")
+        self.logger.log(f"Starting MemeBot session {self.session_id} for wallet {self.wallet}")
 
         # Prevent reuse of wallet
         if self.wallet in load_used_addresses():
-            self.logger.log(f"🚫 Wallet {self.wallet} has already been analyzed.")
+            self.logger.log(f"Wallet {self.wallet} has already been analyzed.")
             return None
         save_used_address(self.wallet)
 
@@ -64,51 +63,67 @@ class MemeBot:
         start_time = datetime.now(timezone.utc)
         end_time = start_time + timedelta(minutes=self.config.run_minutes)
 
-        total_logged = 0
+        valid_count = 0
         page = load_last_page(self.db_path)
 
-        while datetime.now(timezone.utc) < end_time and total_logged < self.max_valid_transfers:
+        while datetime.now(timezone.utc) < end_time and valid_count < self.max_valid_transfers:
             try:
-                self.logger.log(f"[🔄] Fetching page {page}...")
+                self.logger.log(f"Fetching page {page}...")
                 transfers, _ = self.fetcher.fetch_transfers(self.wallet, page=page)
             except Exception as e:
-                self.logger.log(f"❌ Error during fetch: {e}", level="ERROR")
+                self.logger.log(f"Error during fetch: {e}", level="ERROR")
                 break
 
             if not transfers:
-                self.logger.log("🚫 No transfers returned — stopping.")
+                self.logger.log("No transfers returned — stopping.")
                 break
 
             for tx in transfers:
                 insert_raw_transfer(tx, self.db_path)
-                total_logged += 1
-
-                if total_logged >= self.max_valid_transfers:
-                    break
 
             save_last_page(self.db_path, page + 1)
             page += 1
-            self.logger.log(f"[+] Logged {len(transfers)} buys/sells (total so far: {total_logged})")
+            self.logger.log(f"Page {page-1} stored. Starting enrichment.")
             time.sleep(self.config.refresh_interval)
 
-        self.logger.log(f"\n✅ Done! {total_logged} total buys/sells logged to {self.db_path}")
+            # Encrich symbols and decimals
+            enricher = DatabaseEnricher(self.db_path)
+            enricher.run()
+
+            # Count valid enriched BUYS/SELLs
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT COUNT(*) FROM raw_transfers
+                WHERE action IN ('BUY', 'SELL')
+                AND decimals IS NOT NULL
+                AND token_symbol IS NOT NULL
+                AND token IS NOT NULL
+                AND token_symbol NOT LIKE 'UNKNOWN_%'
+                AND token_symbol != ''
+            """)
+            valid_count = cursor.fetchone()[0]
+            conn.close()
+
+            self.logger.log(f"[✔️] {valid_count} valid enriched transfers collected so far.")
+            time.sleep(self.config.refresh_interval)
 
         # Enrich metadata
-        self.logger.log("\n🛠 Starting database enrichment (symbols, decimals)...")
+        self.logger.log("\nStarting database enrichment (symbols, decimals)...")
         enricher = DatabaseEnricher(self.db_path)
         enricher.run()
-        self.logger.log("\n🎉 Symbol and decimals enrichment completed!")
+        self.logger.log("\nSymbol and decimals enrichment completed!")
 
         clean_transfer_database(self.db_path)
 
         # Enrich historical prices
-        self.logger.log("\n🛠 Starting historical price enrichment...")
+        self.logger.log("\nStarting historical price enrichment...")
         price_enricher = PriceEnricher(self.db_path, self.price_provider)
         price_enricher.run()
-        self.logger.log("\n🎉 Historical price enrichment completed!")
+        self.logger.log("\nHistorical price enrichment completed!")
 
         # Load and analyze
-        self.logger.log("\n📈 Running analysis...")
+        self.logger.log("\nRunning analysis...")
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("""
@@ -144,7 +159,7 @@ class MemeBot:
             ))
 
         if not transactions:
-            self.logger.log("⚠️ No transactions available for analysis.", level="WARNING")
+            self.logger.log("No transactions available for analysis.", level="WARNING")
             delete_db(self.db_path)
             raise RuntimeError("Session ended with no transactions to analyze.")
 
@@ -166,12 +181,13 @@ class MemeBot:
             best_token_by_profit=analysis["best_token_by_profit"],
             worst_token_by_profit=analysis["worst_token_by_profit"],
             start_date=analysis["start_date"],
-            end_date=analysis["end_date"]
+            end_date=analysis["end_date"],
+            aggregated_trades=analysis["aggregated_trades"]
         )
 
         # Final cleanup
         delete_db(self.db_path)
-        self.logger.log("🧹 Temporary database deleted.")
+        self.logger.log("Temporary database deleted.")
 
-        self.logger.log(f"\n🎯 Session {self.session_id} finished successfully!")
+        self.logger.log(f"\nSession {self.session_id} finished successfully!")
         return session_result

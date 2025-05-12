@@ -24,7 +24,7 @@ def load_used_addresses(path: str = USED_ADDRESSES_FILE) -> Set[str]:
         with FileLock(LOCK_FILE, timeout=5):
             return _load_addresses_unlocked(path)
     except Timeout:
-        print("⏱️ Timeout: Failed to acquire lock to read used addresses.")
+        print("Timeout: Failed to acquire lock to read used addresses.")
         return set()
 
 def save_used_address(address: str, path: str = USED_ADDRESSES_FILE):
@@ -34,20 +34,20 @@ def save_used_address(address: str, path: str = USED_ADDRESSES_FILE):
             addresses.add(address)
             _save_addresses_unlocked(addresses, path)
     except Timeout:
-        print("⏱️ Timeout: Failed to acquire lock to save used address.")
+        print("Timeout: Failed to acquire lock to save used address.")
 
 def delete_db(db_path: str):
     try:
         if os.path.exists(db_path):
             os.remove(db_path)
-            print(f"🗑️ Deleted temporary DB: {db_path}")
+            print(f"Deleted temporary DB: {db_path}")
     except Exception as e:
-        print(f"⚠️ Failed to delete DB {db_path}: {e}")
+        print(f"Failed to delete DB {db_path}: {e}")
 
 def kill_session_after(timeout_secs: int):
     def killer():
         time.sleep(timeout_secs)
-        print(f"💀 Session exceeded {timeout_secs} seconds. Force killing...")
+        print(f"Session exceeded {timeout_secs} seconds. Force killing...")
         os._exit(1)
 
     threading.Thread(target=killer, daemon=True).start()

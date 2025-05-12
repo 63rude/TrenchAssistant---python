@@ -12,7 +12,7 @@ class APIKeyManager:
 
     def _load_keys(self) -> List[dict]:
         if not self.key_file.exists():
-            raise FileNotFoundError(f"❌ Key file not found: {self.key_file}")
+            raise FileNotFoundError(f"Key file not found: {self.key_file}")
         with open(self.key_file, "r") as f:
             return json.load(f)
 
@@ -28,7 +28,7 @@ class APIKeyManager:
                     key_entry["used"] = key_entry.get("used", 0) + 1
                     self._save_keys()
                     return key_entry["key"]
-        raise RuntimeError("🚫 All API keys have reached their usage limit (10 uses per key). Please add new keys.")
+        raise RuntimeError("All API keys have reached their usage limit (10 uses per key). Please add new keys.")
 
     def get_key(self) -> str:
         return self.active_key

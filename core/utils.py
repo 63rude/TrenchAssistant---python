@@ -24,7 +24,7 @@ def clean_transfer_database(db_path: str):
     keep_ids = [str(row[0]) for row in cursor.fetchall()]
 
     if not keep_ids:
-        logging.warning("⚠️ No valid transfers found with real symbols and decimals. Keeping database untouched.")
+        logging.warning("No valid transfers found with real symbols and decimals. Keeping database untouched.")
         conn.close()
         return
 

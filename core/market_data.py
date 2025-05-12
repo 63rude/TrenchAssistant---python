@@ -65,8 +65,8 @@ class BirdeyeMarketDataProvider(MarketDataProvider):
 
         except Exception as e:
             if self.logger:
-                self.logger.log(f"⚠️ Birdeye API failed for {token_address}: {e}", level="WARNING")
+                self.logger.log(f"Birdeye API failed for {token_address}: {e}", level="WARNING")
             else:
-                print(f"⚠️ Birdeye API failed for {token_address}: {e}")
+                print(f"Birdeye API failed for {token_address}: {e}")
 
         return results
