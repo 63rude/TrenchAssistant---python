@@ -96,11 +96,11 @@ class MemeBot:
             cursor.execute("""
                 SELECT COUNT(*) FROM raw_transfers
                 WHERE action IN ('BUY', 'SELL')
-                AND decimals IS NOT NULL
+                AND decimals IS NOT NULL AND decimals > 0
                 AND token_symbol IS NOT NULL
-                AND token IS NOT NULL
                 AND token_symbol NOT LIKE 'UNKNOWN_%'
                 AND token_symbol != ''
+                AND token IS NOT NULL
             """)
             valid_count = cursor.fetchone()[0]
             conn.close()

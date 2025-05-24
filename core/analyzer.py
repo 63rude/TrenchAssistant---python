@@ -72,12 +72,26 @@ class TradeAnalyzer:
 
         total_profit = sum(t.profit_usd for t in self.aggregated_trades)
 
-        if len(self.aggregated_trades) >= 2:
-            best_trades = sorted(self.aggregated_trades, key=lambda t: t.profit_usd, reverse=True)[:3]
-            worst_trades = sorted(self.aggregated_trades, key=lambda t: t.profit_usd)[:3]
-        else:
-            best_trades = []
-            worst_trades = []
+        # Filter best and worst trades without duplicate symbols
+        seen_symbols = set()
+        sorted_trades = sorted(self.aggregated_trades, key=lambda t: t.profit_usd)
+
+        worst_trades = []
+        best_trades = []
+
+        for trade in sorted_trades:
+            if trade.symbol not in seen_symbols:
+                worst_trades.append(trade)
+                seen_symbols.add(trade.symbol)
+            if len(worst_trades) == 3:
+                break
+
+        for trade in reversed(sorted_trades):
+            if trade.symbol not in seen_symbols:
+                best_trades.append(trade)
+                seen_symbols.add(trade.symbol)
+            if len(best_trades) == 3:
+                break
 
         win_count = sum(1 for t in self.aggregated_trades if t.profit_usd > 0)
         win_rate = round(win_count / len(self.aggregated_trades), 4) if self.aggregated_trades else 0.0
