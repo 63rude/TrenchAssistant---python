@@ -1,0 +1,82 @@
+# 🧠 TrenchAssistant – Wallet Intelligence for Solana Traders
+
+TrenchAssistant is a backend system that analyzes the trading history of Solana wallets by fetching on-chain transaction data, enriching it with historical token prices, and generating insightful analytics about wallet performance.
+
+---
+
+## 🚀 Features
+
+- 🔍 **On-Chain Transaction Fetching**  
+  Retrieves SPL token transfers using the SolanaFM API.
+
+- 🧠 **Metadata & Price Enrichment**  
+  Enriches transfers with token info (symbol, decimals) and historical USD prices using Raydium and Birdeye APIs.
+
+- 📊 **Trade Analysis**  
+  Calculates profit/loss, win rate, best/worst trades, average & median hold times, and correlation with market cap.
+
+- 🧾 **Session-Based Results**  
+  Each wallet analysis runs in an isolated session and outputs a detailed JSON report.
+
+- 🛠️ **Multi-Bot Management**  
+  Parallel bot execution with slot locking for concurrent analysis.
+
+- 🧪 **REST API via FastAPI**  
+  Launch, monitor, and retrieve sessions through a modern HTTP API.
+
+---
+
+## 🛠 Tech Stack
+
+- **Language:** Python 3.10+
+- **Frameworks:** FastAPI
+- **Data Storage:** SQLite
+- **APIs:** SolanaFM, Birdeye, Raydium
+- **Architecture:** Modular, session-based, subprocess management
+- **Utilities:** FileLock, JSON config management, custom decorators
+
+---
+
+## ⚙️ How It Works
+
+1. Start a session by posting a wallet address to the `/start_session` endpoint.
+2. The system:
+   - Fetches historical transactions
+   - Enriches data with metadata & pricing
+   - Analyzes profit and performance
+3. Once complete, results are available via:
+   - `/get_session_status/{session_id}`
+   - `/get_session_result_by_wallet/{wallet}`
+   - `/get_session_logs/{session_id}`
+
+---
+
+## 📦 Example Output
+
+```json
+{
+  "wallet_address": "XXX...",
+  "total_profit_usd": 1243.55,
+  "win_rate": 0.67,
+  "best_token_by_profit": ["DOGEMEME", 857.22],
+  "average_hold_time_human": "3h 14m 18s",
+  "profit_vs_market_cap_correlation": -0.12
+}
+
+---
+
+🧪 Usage (Local Dev)
+
+"uvicorn api.main:app --reload"
+Then test with:
+    Swagger UI: http://localhost:8000/docs
+
+---
+
+🧠 Motivation
+
+This project was built to explore:
+    - Real-world blockchain analytics
+    - API-driven enrichment pipelines
+    - Concurrency and bot orchestration
+    - How wallet behavior reveals trading patterns and inefficiencies
